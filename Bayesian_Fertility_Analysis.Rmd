@@ -1,0 +1,620 @@
+---
+title: "Bayesian Model Selection for Fertility Prediction"
+author: "Rebecca Rossall"
+date: "`r Sys.Date()`"
+output: 
+  pdf_document:
+    latex_engine: xelatex
+fontsize: 11pt
+geometry: margin=0.5in
+---
+The following report investigates the associations between fertility rates across different Swiss regions and various social factors. Using data from 47 regions, this report aims to identify the most influential variables in order to select the best model, make predictions and then critically evaluate the model's performance. The variables considered for this report are as follows: 
+
+• Fertility, standardised fertility measure.
+
+• Agriculture, percentage of males involved in agriculture as occupation.
+
+• Examination, percentage of draftees receiving highest mark on army examination.
+
+• Education, percentage education beyond primary school for draftees.
+
+• Catholic, percentage of Catholics.
+
+• Infant.Mortality, normalised proportion of live births who live less than 1 year.
+
+This data will be randomly split into a training set (70% of the observations), and a test set (30% of the observations). All of the following fitting and selection will be exclusively using the training set.
+
+All the following modelling will use Bayesian framework, with prior distribution for the model parameters as follows: 
+$$\boldsymbol{\beta} \mid \sigma^2 \sim \mathcal{N}(\mathbf{0}, 100\sigma^2 \mathbf{I}_p), \quad \sigma^2 \sim \text{Inverse-Gamma}(2, 2)$$
+This prior distribution will be referenced and applied throughout modelling.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+data(swiss)
+set.seed(77)
+
+n <- nrow(swiss) # Number of rows
+
+random_sample <- sample(1:n, size = 33) #Randomly selects 33 observations
+
+train_set <- swiss[random_sample, ]
+test_set <- swiss[-random_sample, ]
+
+library(MASS)
+library(BayesFactor)
+```
+
+$\\$
+**Investigating the Relationship Between Examination and Fertility**
+
+To begin the exploratory analysis, a scatter plot was produced to visually show what type of association there is between Examination and Fertility. A regression line was added to the plot to highlight any potential linear trend.
+
+```{r, echo=FALSE, fig.width=10, fig.height=4, fig.align='centre'}
+layout(matrix(1:2, nrow =1))
+
+plot(train_set$Examination, train_set$Fertility,
+     xlab = "Examination",
+     ylab = "Fertility",
+     main = "Relationship Between Fertility and Examination",
+     pch = 19,
+     col = "blue")
+lm_fit <- lm(Fertility ~ Examination, data = train_set)
+abline(lm_fit, col = "red", lwd = 2)
+grid()
+
+hist(train_set$Fertility,
+     main = "Histrogram of Fertility",
+     xlab = "Fertility",
+     ylab = "Frequency",
+     breaks = 10)
+
+```
+
+The scatter plot indicates a moderate negative linear association between Fertility and Examination. There are not any obvious outliers observed, despite there being some spread around the regression line.
+
+The preliminary linear regression model of Fertility ~ Examination, shown by the red line in the plot, finds the estimated slope of -1.21. This supports the previous visual observation of a moderate negative association. This suggests that fertility decreases as the percentage of people educated increases, perhaps this could be because people are more focused on work than prioritising fertility and having a family. 
+
+The strength of this association is supported by a Pearson correlation coefficient of -0.68, which confirms a moderate to strong negative relationship between Fertility and Examination. 
+
+The histogram of Fertility has been added to explore the overall distribution of this response variable. Although Bayesian linear models assume conditional normality from the predictors, examining this via the histogram supports the plausibility of the normal likelihood. The histogram illustrates that Fertility is relatively symmetrical, with a 'bell-shape' distribution, suggesting that no transformations are necessary for the future modelling of Fertility.
+
+A Bayesian Normal Linear model is now fitted using the previously stated prior distributions for the parameters. This model is fitted to examine the relationship between Fertility (the response variable) and Examination (the predictor variable). The relationship is modelled as:
+
+```{r, echo=FALSE}
+y <- train_set$Fertility
+Z <- cbind(1, train_set$Examination)
+
+n <- nrow(Z)
+p <- ncol(Z)
+
+#Set prior parameters
+B_0 <- rep(0, p)
+Sigma_0 <- diag(100, p)
+a_0 <- 2
+b_0 <- 2
+
+#Posterior parameters
+Sigma_0_inv <- solve(Sigma_0)
+Sigma_n <- solve(Sigma_0_inv + t(Z) %*% Z)
+B_n <- Sigma_n %*% (t(Z) %*% y + Sigma_0_inv %*% B_0)
+
+a_n <- a_0 + n/2
+B0_S0_inv_B0 <- t(B_0) %*% Sigma_0_inv %*% B_0
+Bn_Sn_inv_Bn <- t(B_n) %*% solve(Sigma_n) %*% B_n
+
+b_n <- b_0 + 0.5 * (t(y) %*% y + B0_S0_inv_B0 - Bn_Sn_inv_Bn)
+
+```
+
+\[
+\text{Fertility}_i = \beta_0 + \beta_1 \cdot \text{Examination}_i + \varepsilon_i, \quad \varepsilon_i \sim \mathcal{N}(0, \sigma^2)
+\]
+
+The selected posterior model is as follows, with distributions of \(\boldsymbol{\beta}\) and \({\sigma}^2\) given by:
+
+$$\begin{aligned}
+\boldsymbol{\beta} \mid \boldsymbol{y}, \boldsymbol{Z}, {\sigma}^2 &\sim \mathcal{N}(\boldsymbol{B}_n, {\sigma}^2 \boldsymbol{\Sigma}_n), \quad\quad
+{\sigma}^2 \mid \boldsymbol{y}, \boldsymbol{Z} \sim \text{IG}(a_n, b_n)
+\end{aligned}$$
+
+where the posterior parameters are:
+$$
+\begin{aligned}
+\boldsymbol {\Sigma}_n &= 
+\begin{pmatrix}
+0.1587 & -0.0080 \\
+-0.0080 & 0.0005
+\end{pmatrix}\\
+\boldsymbol B_n &= 
+\begin{pmatrix}
+89.4092 \\
+-1.2028
+\end{pmatrix}\\
+a_n &= 18.5 \\
+b_n &=  1730.544
+\end{aligned}
+$$
+Thus, the fitted model with the estimated parameters is:
+\[
+\widehat{\text{Fertility}}_i =  89.409219 - 1.20 \times \text{Examination}_i
+\]
+
+10 sets of parameters were sampled from the posterior distribution, and the corresponding regression lines are plotted to visualise the range of likely fits under the Bayesian model. The OLS (Ordinary Least Squares) regression line has been plotted alongside for comparison, showing the single line of best fit. 
+
+```{r, echo=FALSE, fig.width=8, fig.height=4.5}
+sample_size <- 10
+sigma2 <- 1 / rgamma(sample_size, shape = a_n, rate = b_n)
+
+#Obtain corresponding Beta values
+beta <- beta <- matrix(0, nrow = sample_size, ncol = p)
+for (i in 1:sample_size) {
+  beta[i, ] <- mvrnorm(1, mu = B_n, Sigma = Sigma_n * sigma2[i])
+}
+
+# OLS model as defined earlier
+ols_model <- lm(Fertility ~ Examination, data = train_set)
+
+#Plotting scatter plot of actual points
+plot(train_set$Examination, train_set$Fertility,
+     xlab = "Examination",
+     ylab = "Fertility",
+     main = "Linear models of each sampled Bayesian Line and OLS Estimate",
+     pch = 19, col = "lightblue")
+grid()
+
+#Plotting 10 sampled Bayesian regression lines
+for (i in 1:sample_size) {
+  abline(a = beta[i,1], b = beta[i,2], col = rgb(0,0,1,0.3))  # Light transparent blue
+}
+
+#OLS regression line
+abline(ols_model, col = "red", lwd = 2, lty =2)  # Red, thicker line- dashed also
+
+# Add legend for clarity
+legend("topright", legend = c("Sampled Bayesian Lines", "OLS Line"),
+       col = c(rgb(0,0,1,0.3), "red"), lty = c(1, 2), lwd = c(1, 2))
+```
+
+
+The sampled Bayesian regression lines do not differ significantly, and appear closely clustered. This indicates a relatively high level of confidence in this model's parameter estimates and consistency. The Bayesian lines and OLS regression line are consistently similar, which supports the reliability of this Bayesian model. 
+
+$\\$
+**Relationship between Catholic and Fertility**
+
+A scatter plot has been produced to explore the relationship between Catholic and Fertility. A regression line has been added to the plot to highlight any potential linear associations.
+
+
+```{r, echo=FALSE, fig.width=10, fig.height=4,fig.align='centre'}
+layout(matrix(1:2, nrow=1))
+plot(train_set$Catholic, train_set$Fertility,
+     xlab = "Catholic",
+     ylab = "Fertility",
+     main = "Relationship Between Fertility and Catholic",
+     pch = 19,
+     col = "blue")
+lm_fit1 <- lm(Fertility ~ Catholic, data = train_set)
+abline(lm_fit1, col = "red", lwd = 2)
+grid()
+
+hist(train_set$Catholic,
+     main = "Histogram of Catholic",
+     xlab = "Catholic",
+     ylab = "Frequency",
+     breaks = 10)
+
+```
+
+From the scatter plot, there doesn't appear to be a strong linear trend, due to such a wide spread of data across the range of Catholic values. This does indicate that a transformation is necessary in order to visually find an association between Catholic and Fertility. A histogram of Catholic was included to examine the distribution of points in order to aid our choice of transformation. The histogram shows a strong clustering at both low and high values of Catholic.
+
+In order to improve the model fit, Catholic is transformed using the form:
+
+$\text{Catholic.Transform} = (\text{Catholic} - \alpha)^2$, \quad\ with $0 \leq \alpha \leq 100$.
+
+In the original scatter plot, data appears relatively symmetric in trend around a central point- roughly the mean. Therefore, centering the variable at the mean (42.30212) where we have these lowest points, is necessary to make this model more linear. Various similar values for $\alpha$ were tested via this transformation, but the sample mean of Catholic produced the most improved linearity. Thus, when squaring the data, the model will linearise more and the distribution of Catholic.Transform will be much more normalised. 
+
+```{r, echo=FALSE, fig.width=8, fig.height =4.5, fig.align='centre'}
+#Finding Alpha- Mean:
+alpha <- mean(train_set$Catholic)
+#print(alpha)
+train_set$Catholic.Transform <- (train_set$Catholic- alpha)^2
+
+plot(train_set$Catholic.Transform, train_set$Fertility,
+     xlab = "Catholic.Transform",
+     ylab = "Fertility",
+     main = "Exploratory scatter plot of Fertility Vs Catholic.Transform",
+     pch = 19,
+     col = "blue")
+lm_fit1 <- lm(Fertility ~ Catholic.Transform, data = train_set)
+abline(lm_fit1, col = "red", lwd = 2)
+grid()
+
+# Calculate Pearson correlation
+correlation <- cor(train_set$Fertility, train_set$Catholic)
+
+
+```
+The resulting scatter plot of Fertility against Catholic.Transform shows a clearer positive association, which visually illustrates the evident improvement in linearity. This is also supported by the increase in the Pearson correlation coefficient from 0.415 to 0.652, which now indicates a moderate positive relationship.
+
+Thus, the variable will be defined as:    $\text{Catholic.Transform} = (\text{Catholic - 42.30212})^2$, 
+
+A Bayesian Normal linear model was fitted with Fertility as the dependent variable and the improved Catholic.Transform as the independent variable. This model uses the previously stated priors.
+
+```{r, echo=FALSE}
+
+#calculate posterior mean vector from B_n
+y <- train_set$Fertility
+Z <- cbind(1, train_set$Catholic.Transform)
+
+n <- nrow(Z)
+p <- ncol(Z)
+
+#Set prior parameters
+B_0 <- rep(0, p)
+Sigma_0 <- diag(100, p)
+a_0 <- 2
+b_0 <- 2
+
+#Posterior parameters
+Sigma_0_inv <- solve(Sigma_0)
+Sigma_n <- solve(Sigma_0_inv + t(Z) %*% Z)
+B_n <- Sigma_n %*% (t(Z) %*% y + Sigma_0_inv %*% B_0)
+
+a_n <- a_0 + n/2
+B0_S0_inv_B0 <- t(B_0) %*% Sigma_0_inv %*% B_0
+Bn_Sn_inv_Bn <- t(B_n) %*% solve(Sigma_n) %*% B_n
+
+b_n <- b_0 + 0.5 * (t(y) %*% y + B0_S0_inv_B0 - Bn_Sn_inv_Bn)
+
+```
+
+\[
+\text{Fertility}_i = \beta_0 + \beta_1 \cdot \text{Catholic.Transform} + \varepsilon_i, \quad \varepsilon_i \sim \mathcal{N}(0, {\sigma}^2)
+\] 
+
+The selected posterior model is as follows, with distributions of \(\boldsymbol{\beta}\) and \({\sigma}^2\) given by:
+$$\begin{aligned}
+\boldsymbol{\beta} \mid \boldsymbol{y}, \boldsymbol{Z}, {\sigma}^2 &\sim \mathcal{N}(\boldsymbol{B}_n, {\sigma}^2 \boldsymbol{\Sigma}_n), \quad\quad
+{\sigma}^2 \mid \boldsymbol{y}, \boldsymbol{Z} \sim \text{IG}(a_n, b_n)
+\end{aligned}$$
+
+where the posterior parameters are:
+
+$$\begin{aligned}
+\boldsymbol {\Sigma}_n &= 
+\begin{pmatrix}
+1.063863e-01 & -4.565933e-05\\
+-4.565933e-05 &  2.739791e-08
+\end{pmatrix}\\
+\
+\boldsymbol B_n &= 
+\begin{pmatrix}
+55.608254635 \\
+0.008628504
+\end{pmatrix}\\
+\
+a_n &= 18.5 \\
+\
+b_n &=  1840.922
+\end{aligned}$$
+
+Therefore, using the posterior mean estimates and the chosen value of $\alpha$, the fitted model is:
+\[
+\widehat{\text{Fertility}}_i = 55.608254635 + 0.008628504 \cdot (\text{Catholic}_i - 42.30212)^2
+\]
+The posterior mean of the parameters modelled by ${\beta}_n$, where ${\beta}_0$ = 55.6 indicates the baseline level of Fertility, when the Catholic.Transform is 0, hence when the Catholic proportion is 42.3%. This is backed up by similar data points in the initial scatter plot.
+
+The coefficient ${\beta}_1$ = 0.00863 represents the amount that Fertility is expected to increase per 1 unit increase in Catholic.Transform, indicating a positive association. This indicates that when Catholic deviates from the central point (suggested as 42.3) that there is an increase in Fertility. This is consistent with the exploratory analysis from the initial scatter plot, strengthening the reliability of the fitted model, and indicating it is a good fit.
+
+```{r}
+# Posterior mean estimates
+intercept <- 55.608254635
+slope <- 0.008628504
+
+y_pred <- intercept + slope * train_set$Catholic.Transform
+y_actual <- train_set$Fertility
+
+residuals <- y_actual - y_pred
+squared_errors <- residuals^2
+
+rmse <- sqrt(mean(squared_errors))
+```
+
+The RMSE value of 10.51251 was calculated to numerically assess the quality of this fitted model. This represents the average magnitude of the prediction error, meaning that the model predictions deviate from the actual values of Fertility by about 10.51. Actual values of Fertility range from 35 to 92.5, suggesting that this model provides a moderate degree of predictive accuracy. 
+
+Therefore, the model effectively captures the overall trend, but has a moderate inaccuracy when predicting specific values of Fertility.
+ 
+$\\$
+**Bayes Factor Comparison of Models**
+
+The two fitted models are defined for this analysis as:
+
+Model A: Fertility ~ Examination 
+
+Model B: Fertility ~ Catholic.Transform
+
+A Bayes Factor analysis is used in order to quantify which model is more likely, and thus a better fit. The following definition of Bayes Factor (BF) is utilised for this analysis by using the ratio of the marginal likelihoods of the two models.
+\[
+\text{BF}_{A,B} = \frac{p(\boldsymbol{y} \mid M_A)}{p(\boldsymbol{y} \mid M_B)}
+\]
+
+```{r, echo=FALSE}
+
+Examination_BF <- lmBF(Fertility ~ Examination, data = train_set)
+Catholic_BF <- lmBF(Fertility ~ Catholic.Transform, data = train_set)
+
+```
+Initially computing the Bayes Factor finds values of 1390 for Model A, and 474 for Model B. Thus we can evaluate the Bayes Factor between the two models - resulting in a Bayes Factor of 2.9, indicating that using Model A is about 2.9 times more likely relative to Model B.
+
+This Bayes Factor is greater than 1, suggesting evidence in favour of Model A over Model B. This value provides weak to moderate evidence in favour of using Model A: Fertility~Examination, and so this model is slightly preferred, however this evidence is not especially substantial.
+
+$\\$
+**Bayesian Model Selection for Explaining Fertility**
+
+In order to select the best model, Bayes factors have been calculated for all 31 possible model combinations using these 5 possible explanatory variables. Catholic.Transform will be used instead of Catholic as previous analysis found it to be a much better predictor of Fertility. The five potential predictors considered are: Examination, Education, Agriculture, Catholic.Transform and Infant.Mortality.
+
+All possible non-empty Bayesian models were fitted (against the null only containing the intercept) and ranked, producing top models ranked on the highest Bayes Factor (BF), where the ranked top 3 will henceforth be used for this analysis. 
+
+The MSE (Mean Squared Errors) and RMSE (Root Mean Squared Errors) are calculated, and comparison of these values is necessary to consider in picking a model. MSE and RMSE find the difference between the actual and predicted values and represent the magnitude of the errors, which we aim to minimise in fitting this model.
+
+The models were initially ranked on Bayes Factors, and the top 3 models are:
+
+Model 1: Education + Catholic.Transform + Infant.Mortality
+
+Model 2: Education + Agriculture + Catholic.Transform + Infant.Mortality
+
+Model 3: Examination + Education + Agriculture + Catholic.Transform + Infant.Mortality
+
+
+```{r fit-compare, echo=FALSE}
+#Fitting Top 3 Models
+lm_best1 <- lm(Fertility ~ Education + Catholic.Transform + Infant.Mortality, data = train_set)
+
+lm_best2 <- lm(Fertility ~ Education + Agriculture + Catholic.Transform + Infant.Mortality, data = train_set)
+
+lm_full <- lm(Fertility ~ Examination + Education + Agriculture + Catholic.Transform + Infant.Mortality, data = train_set)
+
+#Calculating Bf of each model
+bf_best1 <- 270060.3
+bf_best2 <- 231200.9
+bf_full <- 162325
+
+
+#Predict on test set
+pred1 <- predict(lm_best1, newdata = train_set)
+pred2 <- predict(lm_best2, newdata = train_set)
+pred_full <- predict(lm_full, newdata = train_set)
+
+# Actual values
+actual <- train_set$Fertility
+
+# Calculate MSE and RMSE
+mse <- function(y_true, y_pred) mean((y_true - y_pred)^2)
+rmse <- function(y_true, y_pred) sqrt(mse(y_true, y_pred))
+
+
+# Collect results
+results <- data.frame(
+  Model = c("Best Model 1: Education + Catholic.Transform + Infant.Mortality ", "Best Model 2: Education + Agriculture + Catholic.Transform + Infant.Mortality", "Best Model 3: Examination + Education + Agriculture + Catholic.Transform + Infant.Mortality"),
+  MSE = c(mse(actual, pred1), mse(actual, pred2), mse(actual, pred_full)),
+  RMSE = c(rmse(actual, pred1), rmse(actual, pred2), rmse(actual, pred_full)),
+  BF = c(c(bf_best1, bf_best2, bf_full))
+)
+
+# Display the table
+knitr::kable(results, digits = 3, caption = "Comparison of Best 3 Models")
+```
+This table clearly shows that Model 1 (with the fewest number of covariates included) provides the highest Bayes Factor, yet it appears to have the highest MSE - indicating the highest error, which is to be expected by taking out more variables. Model 3 has the lowest Bayes Factor here, but also the lowest MSE value, suggesting that having all covariates has reduced the error, but at the cost of the Bayes Factor. Thus Model 2 is a good balance of both MSE and Bayes Factor, as it increases explanatory power by adding 1 more variable in, however the reduced Bayes Factor is a drawback here.
+
+In favour of increased statistical likelihood and parsimony, I will focus on Model 1 and 2 now, as the improvement in RMSE in Model 3 is relatively small. This choice can be justified by the significant increase in Bayes Factor.
+
+Model 1 has the highest Bayes Factor, although it is similar to Model 2, which takes account for the additional variable (Agriculture). This could mean that Model 2 has improved explanatory power and reduced bias by not ignoring a variable that has some effect on Fertility. Comparing Model 1 to Model 2 quantitatively finds a comparative Bayes Factor of 1.17 (3sf) - this Bayes Factor suggests Model 1 is 1.17 times better than Model 2 which is greater than 1, so suggests weak evidence in favour of Model 1 as a better fit. Thus, removing the extra variable Agriculture to make Model 1 can be justified, and henceforth is the chosen best model.
+
+```{r, echo=FALSE}
+bf_model <- regressionBF(Fertility ~ Examination + Education + Agriculture + Catholic.Transform + Infant.Mortality, data = train_set, whichModels = "all")
+
+#head(bf_model)
+
+```
+
+
+```{r, echo=FALSE}
+model1 <- lmBF( Fertility ~ Education + Catholic.Transform + Infant.Mortality, data = train_set)
+model2 <- lmBF( Fertility ~ Education + Agriculture + Catholic.Transform + Infant.Mortality, data = train_set)
+
+
+```
+
+
+```{r, echo=FALSE}
+bf_all <- lmBF( Fertility ~Examination + Education + Agriculture + Catholic.Transform + Infant.Mortality , data = train_set)
+
+
+```
+Thus my selected model is Model 1, which uses 3 explanatory variables as shown:
+\[
+\text{Fertility}_i = \beta_0 + \beta_1 \cdot \text{Education}_i + \beta_2 \cdot \text{CatholicTransform}_i + \beta_3 \cdot \text{InfantMortality}_i + \varepsilon_i, \quad \varepsilon_i \sim \mathcal{N}(0, {\sigma}^2)
+\]
+
+Using the given priors stated at the start, the selected posterior model is depicted below.
+
+```{r, echo =FALSE}
+y <- train_set$Fertility
+Z <- cbind(1, train_set$Education, train_set$Catholic.Transform, train_set$Infant.Mortality)
+
+n <- nrow(Z)
+p <- ncol(Z)
+
+#Set prior parameters
+B_0 <- rep(0, p)
+Sigma_0 <- diag(100, p)
+a_0 <- 2
+b_0 <- 2
+
+#Posterior parameters
+Sigma_0_inv <- solve(Sigma_0)
+Sigma_n <- solve(Sigma_0_inv + t(Z) %*% Z)
+B_n <- Sigma_n %*% (t(Z) %*% y + Sigma_0_inv %*% B_0)
+
+a_n <- a_0 + n/2
+B0_S0_inv_B0 <- t(B_0) %*% Sigma_0_inv %*% B_0
+Bn_Sn_inv_Bn <- t(B_n) %*% solve(Sigma_n) %*% B_n
+
+b_n <- b_0 + 0.5 * (t(y) %*% y + B0_S0_inv_B0 - Bn_Sn_inv_Bn)
+
+```
+The posterior distributions are:
+
+$$\boldsymbol{\beta} \mid \mathbf{y}, {\sigma}^2 \sim \mathcal{N}(\boldsymbol{B}_n,\ {\sigma}^2 \boldsymbol{\Sigma}_n), \quad
+{\sigma}^2 \mid \mathbf{y} \sim \text{Inverse-Gamma}(a_n,\ b_n)$$
+where the posterior parameters are:
+
+$$\begin{aligned}
+\boldsymbol{\Sigma}_n &= 
+\begin{pmatrix}
+1.8404506004 & -1.358788e{-02} & -1.007509e{-04} & -7.426702e{-02} \\
+-0.0135878782 &  4.251038e{-04} & 2.299160e{-06} & 2.470767e{-04} \\
+-0.0001007509 & 2.299160e{-06} & 4.009327e{-08} & 3.968369e{-07} \\
+-0.0742670190 & 2.470767e{-04} & 3.968369e{-07} &  3.532664e{-03}
+\end{pmatrix} \\
+\boldsymbol{B}_n &= 
+\begin{pmatrix}
+46.26379927 \\
+-0.67948775 \\
+0.00451381 \\
+1.19127562
+\end{pmatrix}\\
+a_n &= 18.5 \\
+b_n &= 926.6735
+\end{aligned}$$
+
+Samples are drawn from the corresponding posterior, using a sample size of 1000 as is commonly used in Bayesian analysis. This sample size is used here as it is a good balance between computational cost and visual clarity. Samples of each parameter are presented as histograms shown below:
+
+```{r, echo =FALSE, fig.width = 7.5, fig.height = 4.5, fig.align='centre'}
+par(mfrow = c(2, 3), mar = c(4, 4, 2, 1))
+
+n_samples <- 1000
+
+sigma2 <- 1 / rgamma(n_samples, shape = a_n, rate = b_n)
+
+#Finding Beta values
+beta <- beta <- matrix(0, nrow = n_samples, ncol = p)
+for (i in 1:n_samples) {
+  beta[i, ] <- mvrnorm(1, mu = as.vector(B_n), Sigma = Sigma_n * sigma2[i])}
+
+for (j in 1:p) {
+  hist(beta[,j],
+      main = paste("Sampled posterior of Beta",j-1),
+      xlab = bquote(beta[.(j-1)]),
+      col = "lightblue")
+}
+
+hist(sigma2,
+     main = bquote("Sampled posterior of " ~ sigma^2),
+     xlab = expression(sigma^2),
+     col = "blue")
+
+```
+
+These histograms show the plots of $\beta$ being distributed relatively normally as expected by theoretical posterior distribution of $\beta$. The histogram illustrating the distribution of the sampled $\sigma^2$ shows a slight positive skew, which is consistent with the theoretical inverse gamma distribution.
+ 
+Now computing estimates of parameters, by using the posterior mean for the chosen Bayesian linear model respective to each parameter.
+
+Starting with the estimated values for $\beta$, 
+\[
+\hat{\boldsymbol{\beta}} =
+\begin{pmatrix}
+\text{Intercept} \\
+\text{Education} \\
+\text{Catholic.Transform} \\
+\text{Infant.Mortality}
+\end{pmatrix}
+=
+\begin{pmatrix}
+\hat{\beta}_0 \\
+\hat{\beta}_1 \\
+\hat{\beta}_2 \\
+\hat{\beta}_3
+\end{pmatrix}
+=
+\begin{pmatrix}
+46.2638 \\
+-0.6794877 \\
+0.00451381 \\
+1.191276
+\end{pmatrix}
+\]
+
+The estimated parameter $\hat{\beta}_0$ = 46.2638 represents the expected Fertility level, when all explanatory variables are 0. Whilst these exact values don't exist in the dataset, we can use data for the values closest to 0 from Education, Catholic.Transform and Infant.mortality (1, 0.00143 and 10.8 respectively). These values yield respective values for Fertility of 72, 35, 54.3. These data doesn't have exact values of 0, so this does account for some error, but on average is relatively similar to the estimated parameter, supporting this estimate as appropriate.
+
+The estimated parameter $\hat{\beta}_1$ = -0.6795 suggests that education has a negative effect on Fertility, where every 1 unit increase in education decreases Fertility by approximately 0.68 units. The estimated parameter $\hat{\beta}_2$ = 0.00451381 represents a small positive increase in Fertility of approximately 0.0045 with each unit increase in Catholic.Transform (when Catholic deviates from the mean). This parameter initially suggests a very minor increase to Fertility. The positive coefficient for Infant.Mortality, $\hat{\beta}_3$ = 1.191276, comparatively has the largest magnitude, suggesting that each unit increase in Infant.Mortality increases Fertility by 1.19 units.
+
+Although this visually implies that Infant.Mortality is the strongest marginal effect on Fertility (from the largest estimated $\beta$ value), it is important to consider the scale of each variable and how the range may contribute here. The range of Catholic.Transform is very large and so ${\beta}_3$ could have a large impact on Fertility- conditional on using the larger values of Catholic.Transform (when Catholic deviates far away from the mean of 42.3). Thus the impact of Catholic.Transform isn't as consistently influential in predicting Fertility. Education and Infant.Mortality have very similar smaller ranges here, suggesting they are comparable, thus indicating that Infant.Mortality is consistently the strongest predictor of Fertility.
+
+```{R, echo=FALSE}
+beta_estimate <- t(B_n)
+sigma2_mean <- b_n / (a_n - 1)
+sigma2_MAP <- b_n / (a_n + 1)
+
+```
+
+Where the estimated value for $\hat\sigma^2$ is:
+\[
+\hat{\sigma}^2 = 52.95277
+\]
+
+The estimated parameter $\hat\sigma^2$ represents residual variance of approximately 53 in predicted Fertility values after accounting for the explanatory variables. The total variance of the observed Fertility is calculated as approximately 198. Comparing this (using 1 - 53/198) finds that approximately 73% of the variance in Fertility is explained by this model, indicating this is a strong model fit and a reliable predictive model.
+ 
+Now these parameter estimates of $\hat{\beta}$ particularly can be used in order to make predictions of Fertility, by using this final model:
+\[
+\widehat{\text{Fertility}} = 46.2638 
+\,-\, 0.6795 \cdot \text{Education}
+\,+\, 0.0045 \cdot \text{Catholic.Transform}
+\,+\, 1.1913 \cdot \text{Infant.Mortality}
+\]
+
+```{r, echo=FALSE}
+
+test_set$Catholic.Transform <- (test_set$Catholic- alpha)^2
+
+y_pred = 46.26379927 -0.67948775 * test_set$Education + 0.00451381 * test_set$Catholic.Transform + 1.19127562 * test_set$Infant.Mortality
+
+y_actual <- test_set$Fertility
+
+residuals <- round(y_actual - y_pred, 2)
+squared_errors <- round((y_actual - y_pred)^2, 3)
+
+
+mse_val <- mean((y_actual - y_pred)^2)
+rmse_val <- sqrt(mse_val)
+
+
+```
+
+The predicted data achieves an MSE of 49.331 and an RMSE of 7.024, which suggest an error of approximately +/- 7 fertility units, which is relatively accurate and much improved compared to the predicted of the models in the explanatory analysis. This could be due to excluding the other variables which do not have a significant relationship with Fertility and thus reducing the bias shown through the RMSE.
+
+```{r, echo=FALSE, fig.width=7, fig.height=4, fig.align='centre'}
+range_vals <- range(c(test_set$Fertility, y_pred))
+
+plot(test_set$Fertility, y_pred,
+     main = "Predicted vs Observed Fertility",
+     xlab = "Observed Fertility",
+     ylab = "Predicted Fertility",
+     pch = 19,
+     col = "blue",
+     xlim = range_vals,
+     ylim = range_vals)
+abline(a=0, b=1, col = "red", lty =2)
+grid()
+```
+
+This plot visually illustrates the similarity of predictions compared to the actual Fertility values. The red line shows what a perfect model should look like, which most of the points are closely situated around, so shows this is a relatively accurate model in predicting Fertility.
+
+In summary, Bayesian analysis and comparisons of 31 potential models were carried out in order to predict Fertility most accurately. From this analysis, a model with three predictors: Education, Catholic.Transform and Infant.Mortality was chosen based on its strong Bayes Factor, parsimony and predictive accuracy. The model was then completed via posterior estimates, which provided the coefficients for each chosen covariate to finish this model off, and comparison of these estimates supported the suggestion that this model is a good fit. Evaluating this model further, provided predictions for Fertility which were compared against the observed values of Fertility provided by the Test Set. These produced a relatively low RMSE value indicating a low error and estimated variance found that 73% of the total variance is explained by this model. After quantitative analysis, a visual presentation of this model's prediction was produced, which further verified the predictive accuracy of this chosen model.
+
+
+
+
+
+
+
